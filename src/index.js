@@ -58,6 +58,10 @@ const commandHandlers = {
   'ملاحظة-داخلية': handleInternalNote
 };
 
+const DAY_IN_MS = 24 * 60 * 60 * 1000;
+const MINUTE_IN_MS = 60 * 1000;
+const HALF_HOUR_MS = 30 * MINUTE_IN_MS;
+
 client.once('ready', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   startAutoCloseLoop();
@@ -205,11 +209,14 @@ function enforceSpam(userId) {
   const state = getState();
   const now = Date.now();
   const tracker = state.spamTracker[userId] || { opened: [] };
-  tracker.opened = (tracker.opened || []).filter((ts) => now - ts < 24 * 60 * 60 * 1000);
+  tracker.opened = (tracker.opened || []).filter((ts) => now - ts < DAY_IN_MS);
   if (tracker.opened.length >= (state.settings.spam.dailyLimit || 3)) {
     return 'لقد وصلت للحد اليومي لفتح التذاكر.';
   }
-  if (tracker.lastOpenedAt && now - tracker.lastOpenedAt < (state.settings.spam.cooldownMinutes || 15) * 60 * 1000) {
+  if (
+    tracker.lastOpenedAt &&
+    now - tracker.lastOpenedAt < (state.settings.spam.cooldownMinutes || 15) * MINUTE_IN_MS
+  ) {
     return 'الرجاء الانتظار قبل فتح تذكرة جديدة.';
   }
   tracker.lastOpenedAt = now;
@@ -862,10 +869,10 @@ async function handleTicketReports(interaction) {
   const now = Date.now();
   const start =
     range === 'day'
-      ? now - 24 * 60 * 60 * 1000
+      ? now - DAY_IN_MS
       : range === 'week'
-        ? now - 7 * 24 * 60 * 60 * 1000
-        : now - 30 * 24 * 60 * 60 * 1000;
+        ? now - 7 * DAY_IN_MS
+        : now - 30 * DAY_IN_MS;
   const tickets = Object.values(getState().tickets).filter((t) => t.createdAt >= start);
   const byStatus = statusOptions.map((s) => ({
     status: s,
@@ -980,7 +987,7 @@ function startAutoCloseLoop() {
       if (
         ticket.remindersSent < (state.settings.reminders.maxReminders || 2) &&
         diffMinutes >= (state.settings.reminders.firstReminderMinutes || 45) &&
-        (!ticket.lastReminderAt || now - ticket.lastReminderAt > 30 * 60 * 1000)
+        (!ticket.lastReminderAt || now - ticket.lastReminderAt > HALF_HOUR_MS)
       ) {
         const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
         if (channel && channel.isTextBased()) {
@@ -1003,5 +1010,5 @@ function startAutoCloseLoop() {
         await closeTicket(ticket.channelId, null, 'إغلاق تلقائي لعدم الرد');
       }
     }
-  }, 60_000);
+  }, MINUTE_IN_MS);
 }
