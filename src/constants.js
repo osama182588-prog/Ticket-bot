@@ -57,9 +57,9 @@ export const defaultSettings = {
     maxReminders: 2
   },
   mode: 'عادي',
+  locale: 'ar-EG',
   spam: {
     dailyLimit: 3,
     cooldownMinutes: 15
   }
 };
-

@@ -64,6 +64,13 @@ const HALF_HOUR_MS = 30 * MINUTE_IN_MS;
 const MAX_TICKETS_PER_CYCLE = 200;
 let autoCloseCursor = 0;
 
+const sanitizeChannelFragment = (text) =>
+  (text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/gi, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+
 client.once('ready', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   startAutoCloseLoop();
@@ -233,7 +240,7 @@ function getTicket(channelId) {
   return getState().tickets[channelId];
 }
 
-async function refreshTicketMessage(ticket) {
+async function refreshTicketMessage(ticket, state = getState()) {
   const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
   if (!channel || !channel.isTextBased()) return;
   const message = ticket.messageId
@@ -257,7 +264,7 @@ async function refreshTicketMessage(ticket) {
     .setCustomId('ticket-claim')
     .setLabel('📥 استلام التذكرة')
     .setStyle(ButtonStyle.Primary)
-    .setDisabled(Boolean(ticket.assignedTo && getState().settings.claim.hideAfterClaim));
+    .setDisabled(Boolean(ticket.assignedTo && state.settings.claim.hideAfterClaim));
   const closeButton = new ButtonBuilder()
     .setCustomId('ticket-close')
     .setLabel('إغلاق التذكرة')
@@ -309,8 +316,9 @@ async function closeTicket(channelId, closedBy, reason = 'إغلاق التذك�
       content: `تم إغلاق التذكرة. السبب: ${reason} - ${closedBy ? `<@${closedBy}>` : ''}`
     });
   }
+  const stateAfterClose = getState();
   await sendTicketLog(updated, `تم إغلاق التذكرة بواسطة ${closedBy ? `<@${closedBy}>` : 'النظام'}`);
-  await refreshTicketMessage(updated);
+  await refreshTicketMessage(updated, stateAfterClose);
 }
 
 function ensureTicketChannel(interaction) {
@@ -374,9 +382,11 @@ async function handleButton(interaction) {
       t.assignedTo = interaction.user.id;
       logTimeline(t, interaction.user.id, 'استلام', 'تم استلام التذكرة');
     });
+    const state = getState();
+    const updatedTicket = state.tickets[interaction.channelId];
     await interaction.reply({ content: 'تم استلام التذكرة.', ephemeral: true });
-    await refreshTicketMessage(getTicket(interaction.channelId));
-    await sendTicketLog(getTicket(interaction.channelId), `تم استلام التذكرة بواسطة <@${interaction.user.id}>`);
+    await refreshTicketMessage(updatedTicket, state);
+    await sendTicketLog(updatedTicket, `تم استلام التذكرة بواسطة <@${interaction.user.id}>`);
     return;
   }
   if (interaction.customId === 'ticket-close') {
@@ -391,8 +401,9 @@ async function handleButton(interaction) {
   if (interaction.customId === 'ticket-timeline') {
     const ticket = ensureTicketChannel(interaction);
     if (!ticket) return;
+    const locale = getState().settings.locale || 'ar-EG';
     const lines = (ticket.timeline || []).slice(-15).map((item) => {
-      const date = new Date(item.at).toLocaleString('ar-EG');
+      const date = new Date(item.at).toLocaleString(locale);
       return `• ${date} - ${item.action}${item.by ? ` بواسطة <@${item.by}>` : ''}${item.note ? ` (${item.note})` : ''}`;
     });
     return interaction.reply({
@@ -475,7 +486,9 @@ async function openTicket({ interaction, type, details, dashboardId, buttonId, l
       ]
     });
   }
-  const channelName = `ticket-${interaction.user.username}-${type}`.replace(/\s+/g, '-').slice(0, 90);
+  const safeUser = sanitizeChannelFragment(interaction.user.username) || interaction.user.id;
+  const safeType = sanitizeChannelFragment(type) || 'ticket';
+  const channelName = `ticket-${safeUser}-${safeType}`.slice(0, 90);
   const channel = await guild.channels.create({
     name: channelName,
     type: ChannelType.GuildText,
@@ -502,7 +515,8 @@ async function openTicket({ interaction, type, details, dashboardId, buttonId, l
   updateState((draft) => {
     draft.tickets[channel.id] = ticketData;
   });
-  await refreshTicketMessage(ticketData);
+  const currentState = getState();
+  await refreshTicketMessage(ticketData, currentState);
   await interaction.reply({
     content: `تم إنشاء تذكرة جديدة في <#${channel.id}>`,
     ephemeral: true
@@ -646,7 +660,8 @@ async function handleUnclaim(interaction) {
       logTimeline(t, interaction.user.id, 'إلغاء الاستلام', 'تم إلغاء الاستلام');
     }
   });
-  await refreshTicketMessage(getTicket(interaction.channelId));
+  const state = getState();
+  await refreshTicketMessage(state.tickets[interaction.channelId], state);
   await interaction.reply({ content: 'تم إلغاء الاستلام.', ephemeral: true });
 }
 
@@ -664,9 +679,10 @@ async function handleTransfer(interaction) {
       logTimeline(t, interaction.user.id, 'نقل', `تم النقل إلى ${target.id}`);
     }
   });
-  await refreshTicketMessage(getTicket(interaction.channelId));
+  const state = getState();
+  await refreshTicketMessage(state.tickets[interaction.channelId], state);
   await interaction.reply({ content: `تم نقل التذكرة إلى ${target}.`, ephemeral: true });
-  await sendTicketLog(getTicket(interaction.channelId), `تم نقل التذكرة إلى <@${target.id}>`);
+  await sendTicketLog(state.tickets[interaction.channelId], `تم نقل التذكرة إلى <@${target.id}>`);
 }
 
 async function handleChangeStatus(interaction) {
@@ -686,9 +702,10 @@ async function handleChangeStatus(interaction) {
       logTimeline(t, interaction.user.id, 'حالة', status);
     }
   });
-  await refreshTicketMessage(getTicket(interaction.channelId));
+  const state = getState();
+  await refreshTicketMessage(state.tickets[interaction.channelId], state);
   await interaction.reply({ content: 'تم تحديث الحالة.', ephemeral: true });
-  await sendTicketLog(getTicket(interaction.channelId), `تم تغيير الحالة إلى ${status}`);
+  await sendTicketLog(state.tickets[interaction.channelId], `تم تغيير الحالة إلى ${status}`);
 }
 
 async function handleAddTag(interaction) {
@@ -701,7 +718,8 @@ async function handleAddTag(interaction) {
     t.tags = Array.from(new Set([...(t.tags || []), tag]));
     logTimeline(t, interaction.user.id, 'إضافة وسم', tag);
   });
-  await refreshTicketMessage(getTicket(interaction.channelId));
+  const state = getState();
+  await refreshTicketMessage(state.tickets[interaction.channelId], state);
   await interaction.reply({ content: 'تمت إضافة الوسم.', ephemeral: true });
 }
 
@@ -715,7 +733,8 @@ async function handleRemoveTag(interaction) {
     t.tags = (t.tags || []).filter((item) => item !== tag);
     logTimeline(t, interaction.user.id, 'حذف وسم', tag);
   });
-  await refreshTicketMessage(getTicket(interaction.channelId));
+  const state = getState();
+  await refreshTicketMessage(state.tickets[interaction.channelId], state);
   await interaction.reply({ content: 'تم حذف الوسم.', ephemeral: true });
 }
 
@@ -985,7 +1004,6 @@ function startAutoCloseLoop() {
     if (!tickets.length) return;
     if (autoCloseCursor >= tickets.length) autoCloseCursor = 0;
     const batch = tickets.slice(autoCloseCursor, autoCloseCursor + MAX_TICKETS_PER_CYCLE);
-    autoCloseCursor += MAX_TICKETS_PER_CYCLE;
     const now = Date.now();
     for (const ticket of batch) {
       const last = ticket.lastActivityAt || ticket.createdAt;
@@ -1018,5 +1036,6 @@ function startAutoCloseLoop() {
         await closeTicket(ticket.channelId, null, 'إغلاق تلقائي لعدم الرد');
       }
     }
+    autoCloseCursor += batch.length;
   }, MINUTE_IN_MS);
 }
