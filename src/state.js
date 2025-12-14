@@ -36,6 +36,7 @@ try {
   state.bannedUsers = state.bannedUsers || {};
   state.spamTracker = state.spamTracker || {};
 } catch (error) {
+  console.warn('تعذر قراءة ملف الحالة، سيتم استخدام الإعدادات الافتراضية.', error);
   state = defaultState;
 }
 

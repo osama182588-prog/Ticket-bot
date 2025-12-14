@@ -61,6 +61,8 @@ const commandHandlers = {
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 const MINUTE_IN_MS = 60 * 1000;
 const HALF_HOUR_MS = 30 * MINUTE_IN_MS;
+const MAX_TICKETS_PER_CYCLE = 200;
+let autoCloseCursor = 0;
 
 client.once('ready', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
@@ -979,9 +981,13 @@ async function handleInternalNote(interaction) {
 function startAutoCloseLoop() {
   setInterval(async () => {
     const state = getState();
+    const tickets = Object.values(state.tickets).filter((t) => t.status !== 'مغلقة');
+    if (!tickets.length) return;
+    if (autoCloseCursor >= tickets.length) autoCloseCursor = 0;
+    const batch = tickets.slice(autoCloseCursor, autoCloseCursor + MAX_TICKETS_PER_CYCLE);
+    autoCloseCursor += MAX_TICKETS_PER_CYCLE;
     const now = Date.now();
-    for (const ticket of Object.values(state.tickets)) {
-      if (ticket.status === 'مغلقة') continue;
+    for (const ticket of batch) {
       const last = ticket.lastActivityAt || ticket.createdAt;
       const diffMinutes = (now - last) / 60000;
       if (
@@ -989,7 +995,9 @@ function startAutoCloseLoop() {
         diffMinutes >= (state.settings.reminders.firstReminderMinutes || 45) &&
         (!ticket.lastReminderAt || now - ticket.lastReminderAt > HALF_HOUR_MS)
       ) {
-        const channel = await client.channels.fetch(ticket.channelId).catch(() => null);
+        const channel =
+          client.channels.cache.get(ticket.channelId) ||
+          (await client.channels.fetch(ticket.channelId).catch(() => null));
         if (channel && channel.isTextBased()) {
           channel
             .send({
