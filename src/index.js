@@ -63,6 +63,7 @@ const MINUTE_IN_MS = 60 * 1000;
 const HALF_HOUR_MS = 30 * MINUTE_IN_MS;
 const MAX_TICKETS_PER_CYCLE = 200;
 let autoCloseCursor = 0;
+const MAX_CHANNEL_NAME_LENGTH = 90;
 
 const sanitizeChannelFragment = (text) =>
   (text || '')
@@ -217,8 +218,12 @@ async function logConfigChange(description) {
 function enforceSpam(userId) {
   const state = getState();
   const now = Date.now();
-  const tracker = state.spamTracker[userId] || { opened: [] };
-  tracker.opened = (tracker.opened || []).filter((ts) => now - ts < DAY_IN_MS);
+  const baseTracker = state.spamTracker[userId] || { opened: [] };
+  const tracker = {
+    opened: [...(baseTracker.opened || [])],
+    lastOpenedAt: baseTracker.lastOpenedAt
+  };
+  tracker.opened = tracker.opened.filter((ts) => now - ts < DAY_IN_MS);
   if (tracker.opened.length >= (state.settings.spam.dailyLimit || 3)) {
     return 'لقد وصلت للحد اليومي لفتح التذاكر.';
   }
@@ -488,7 +493,7 @@ async function openTicket({ interaction, type, details, dashboardId, buttonId, l
   }
   const safeUser = sanitizeChannelFragment(interaction.user.username) || interaction.user.id;
   const safeType = sanitizeChannelFragment(type) || 'ticket';
-  const channelName = `ticket-${safeUser}-${safeType}`.slice(0, 90);
+  const channelName = `ticket-${safeUser}-${safeType}`.slice(0, MAX_CHANNEL_NAME_LENGTH);
   const channel = await guild.channels.create({
     name: channelName,
     type: ChannelType.GuildText,
