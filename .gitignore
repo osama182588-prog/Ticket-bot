@@ -20,3 +20,8 @@ rad.json
 *.flf
 #Test results file
 TestResults.xml
+
+# Node / Discord bot artifacts
+node_modules/
+.env
+data/state.json

@@ -1,12 +1,22 @@
 {
   "name": "ticket-bot",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "بوت تذاكر متقدم للأوامر العربية باستخدام Discord Slash Commands",
+  "type": "module",
+  "main": "src/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node src/index.js",
+    "register": "node src/register-commands.js",
+    "test": "node -e \"console.log('no tests configured')\""
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5"
+  },
+  "overrides": {
+    "undici": "6.21.3"
+  }
 }
